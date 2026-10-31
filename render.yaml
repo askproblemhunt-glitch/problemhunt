@@ -1,0 +1,30 @@
+# Free 24/7 setup: Render free web service + Supabase free (data backup) + a free uptime pinger.
+# Render dashboard -> New -> Blueprint -> pick this GitHub repo. See deploy/FREE_24x7.md
+services:
+  - type: web
+    name: problemhunt
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PH_PUBLIC_MODE
+        value: "1"
+      - key: PH_CLOUD_BACKUP
+        value: "1"
+      - key: PH_AUTH_SECRET
+        generateValue: true
+      - key: PH_ADMIN_TOKEN
+        generateValue: true
+      - key: PH_ADMIN_EMAIL          # the account that signs up with this email becomes the admin
+        sync: false
+      - key: SUPABASE_URL            # Supabase -> Project Settings -> API -> Project URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY    # Supabase -> Project Settings -> API keys -> service_role / secret key
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

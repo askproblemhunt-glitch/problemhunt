@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+backend/data/
+.env
+frontend/node_modules/
+frontend/.next/
+*.zip
+# old OCR copies from v4 (now served from backend/static/tesseract)
+frontend/public/tesseract/
+frontend/out/tesseract/

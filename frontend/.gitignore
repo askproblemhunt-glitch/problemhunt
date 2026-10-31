@@ -1,0 +1,5 @@
+node_modules
+.next
+.env*.local
+# NOTE: /out (the prebuilt dashboard) is committed on purpose so the
+# Python backend can serve it without Node.js.

@@ -1,0 +1,13 @@
+# Core (required)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+websockets>=12.0
+pydantic>=2.6
+# AI brain (LangChain + free LLM providers)
+langchain-core>=0.3
+langchain-groq>=0.2
+# Web Push notifications (VAPID, no Firebase needed)
+pywebpush>=2.0
+# Optional extra providers - uncomment to use:
+# langchain-huggingface>=0.1
+# langchain-ollama>=0.2
