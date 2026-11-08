@@ -17,6 +17,7 @@ import logging
 import math
 import re
 import time
+import urllib.error
 import urllib.request
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
@@ -218,11 +219,17 @@ def llm_ready(s: Dict[str, Any]) -> bool:
     return bool(s.get("llm_base_url") and s.get("llm_model"))
 
 
-def _chat(s: Dict[str, Any], messages: List[Dict[str, str]], max_tokens: int = 700) -> Optional[str]:
+def _chat(s: Dict[str, Any], messages: List[Dict[str, str]], max_tokens: int = 700,
+          errors: Optional[List[str]] = None) -> Optional[str]:
     url = s["llm_base_url"].rstrip("/") + "/chat/completions"
     if not url.lower().startswith(("https://", "http://localhost", "http://127.0.0.1", "http://ollama", "http://host.docker.internal")):
         return None
-    body = json.dumps({"model": s["llm_model"], "messages": messages, "temperature": 0.2, "max_tokens": max_tokens}).encode()
+    req_body: Dict[str, Any] = {"model": s["llm_model"], "messages": messages, "temperature": 0.2, "max_tokens": max_tokens}
+    if "gpt-oss" in s["llm_model"].lower():
+        # reasoning models spend tokens thinking first; keep that short so an answer is always produced
+        req_body["reasoning_effort"] = "low"
+        req_body["max_tokens"] = max(max_tokens, 400)
+    body = json.dumps(req_body).encode()
     headers = {"Content-Type": "application/json"}
     if s.get("llm_api_key"):
         headers["Authorization"] = "Bearer " + s["llm_api_key"]
@@ -230,9 +237,26 @@ def _chat(s: Dict[str, Any], messages: List[Dict[str, str]], max_tokens: int = 7
     try:
         with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310 - admin-configured LLM endpoint
             data = json.loads(r.read(2_000_000))
-        return (data.get("choices") or [{}])[0].get("message", {}).get("content")
+        content = (data.get("choices") or [{}])[0].get("message", {}).get("content")
+        if not content and errors is not None:
+            errors.append("The model returned an empty answer — try another model name")
+        return content
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read(20_000)).get("error", {})
+            detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+        except Exception:
+            detail = ""
+        log.info("LLM call failed: HTTP %s %s", exc.code, detail)
+        if errors is not None:
+            hint = {401: "API key is wrong", 403: "API key not allowed", 404: "model name or URL not found",
+                    429: "rate limit reached, try again in a minute"}.get(exc.code, "")
+            errors.append(f"HTTP {exc.code}: {hint or detail or 'error'}" + (f" ({detail[:120]})" if hint and detail else ""))
+        return None
     except Exception as exc:
         log.info("LLM call failed: %s", exc)
+        if errors is not None:
+            errors.append(f"Could not reach the AI server ({exc.__class__.__name__})")
         return None
 
 
@@ -370,5 +394,6 @@ async def ai_test():
     s = PDB.settings()
     if not llm_ready(s):
         return {"ok": False, "detail": "Set the AI base URL and model first"}
-    out = await asyncio.to_thread(_chat, s, [{"role": "user", "content": "Reply with the single word: ready"}], 10)
-    return {"ok": bool(out), "detail": (out or "No reply — check the URL, model name and key")[:200]}
+    errs: List[str] = []
+    out = await asyncio.to_thread(_chat, s, [{"role": "user", "content": "Reply with the single word: ready"}], 50, errs)
+    return {"ok": bool(out), "detail": (out or (errs[0] if errs else "No reply — check the URL, model name and key"))[:200]}
