@@ -1,0 +1,39 @@
+name: Keep ProblemHunt alive
+
+on:
+  schedule:
+    - cron: "17 3 * * *"     # roz subah ~8:47 AM IST
+  workflow_dispatch:          # "Run workflow" button se manual test
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Supabase heartbeat
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -e
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          AUTH=()
+          # Purani JWT key (eyJ...) ke saath Authorization header bhi bhejna hota hai
+          if [[ "$SUPABASE_SERVICE_KEY" == eyJ* ]]; then
+            AUTH=(-H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          fi
+          CODE=$(curl -s -o resp.txt -w "%{http_code}" -X POST \
+            "$SUPABASE_URL/rest/v1/ph_keepalive?on_conflict=id" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" "${AUTH[@]}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            -d "{\"id\":1,\"beat_at\":\"$NOW\",\"source\":\"github-actions\"}")
+          echo "Supabase HTTP $CODE"; cat resp.txt || true
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Heartbeat FAILED"; exit 1
+          fi
+
+      - name: Wake website
+        run: |
+          curl -s -o /dev/null -w "Site HTTP %{http_code}\n" --max-time 90 \
+            https://problemhunt.com/api/health || true
